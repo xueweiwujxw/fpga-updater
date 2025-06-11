@@ -1,0 +1,134 @@
+#!/usr/bin/python3
+
+import glob
+from os import path
+from os import walk
+from pathlib import Path
+import git
+import time
+
+APPNAME = 'pcie-fpga-updater'
+VERSION = '1.2.0'
+MAINTAINER = 'Wlanxww <xueweiwujxw@outlook.com>'
+ARCH = 'amd64'
+DESCRIPTION = 'PCIe fpga updater'
+
+
+def has_c_cpp_source_file(directory):
+    """检查目录及其子目录是否包含C/C++源码文件"""
+    c_cpp_source_ext = {'.c', '.cpp', '.cc', '.cxx'}
+    file_paths = []
+    for root, _, files in walk(directory):
+        for file in files:
+            if Path(file).suffix in c_cpp_source_ext:
+                full_path = path.join(root, file)
+                file_paths.append(full_path)
+
+    return file_paths
+
+
+def options(opt):
+    opt.load('compiler_c')
+    opt.load('compiler_cxx')
+    repo = git.Repo(search_parent_directories=True)
+    sha = repo.git.rev_parse(repo.head.commit.hexsha, short=8)
+    stamp = int(time.time())
+    opt.add_option('--hash', action='store', default=sha,
+                   help='git commit hash value, default: current commit hash')
+    opt.add_option('--debug', action='store_true',
+                   default=False, help='enable debug mode, default: False')
+    opt.add_option('--stamp', action='store',
+                   default=stamp, help='configure time, default: current timestamp')
+    opt.add_option('--mode', action='store',
+                   default='develop', help='test: test mode, develop: development mode, product: production mode, default: develop')
+
+
+def build(bld):
+    defines = [
+        f'VERSION="{VERSION}"',
+        f'STAMP="{bld.env.stamp}"',
+        f'HASH="{bld.env.hash}"',
+    ]
+    if bld.env.debug:
+        defines.append('DEBUG')
+
+    built_libs = []
+
+    for lib in glob.glob('lib/**'):
+        if path.isdir(lib):
+            lib_src_files = has_c_cpp_source_file(lib)
+            lib_name = path.basename(lib)
+            if lib_src_files.__len__() != 0:
+                bld.stlib(
+                    source=lib_src_files,
+                    includes=[lib_header for lib_header in glob.glob(
+                        f'{lib}/**/', recursive=True)],
+                    vnum=VERSION,
+                    defines=defines,
+                    target=lib_name)
+                built_libs.append(lib_name)
+
+    includepath = [src_dir for src_dirs in ['src', 'lib']
+                   for src_dir in glob.glob(f'{src_dirs}/**/', recursive=True)]
+    bld.stlib(
+        source=glob.glob('src/**/*.c*', recursive=True),
+        use=built_libs,
+        lib=['pthread', 'm'],
+        includes=includepath,
+        vnum=VERSION,
+        defines=defines,
+        target='update'
+    )
+
+    source_uses = ['update'] + built_libs
+    apptargets = glob.glob('app/*.c*')
+    testtargets = glob.glob('test/*.c*')
+    for app in apptargets:
+        appname = path.splitext(path.basename(app))[0]
+        bld.program(
+            source=app,
+            use=source_uses,
+            includes=includepath,
+            rpath='$ORIGIN',
+            lib=['pthread', 'z', 'rt'],
+            target=f'dist/app/{appname}',
+            defines=defines
+        )
+    if bld.env.mode == 'test':
+        for test in testtargets:
+            testname = path.splitext(path.basename(test))[0]
+            bld.program(
+                source=test,
+                use=source_uses,
+                includes=includepath,
+                rpath='$ORIGIN',
+                lib=['pthread', 'z', 'zmq', 'rt'],
+                target=f'dist/test/{testname}',
+                defines=defines
+            )
+    bld.install_files(bld.path.abspath()+'/out/DEBIAN',
+                      glob.glob('DEBIAN/*'), chmod=0o775)
+    bld.install_as(bld.path.abspath()+f'/out/DEBIAN/control',
+                   '.control_info')
+
+
+def configure(ctx):
+    ctx.load('g++ gcc')
+    ctx.env.hash = ctx.options.hash
+    ctx.env.debug = ctx.options.debug
+    ctx.env.stamp = ctx.options.stamp
+    ctx.env.mode = ctx.options.mode
+    cxxflags = ['-Wall', '-Wextra', '-std=c++2a',
+                '-Wno-unused-parameter', '-Wpedantic']
+    if ctx.env.debug:
+        cxxflags.append('-g')
+    else:
+        cxxflags.append('-O2')
+    ctx.env.append_value('CXXFLAGS', cxxflags)
+    ctx.exec_command(
+        f'echo "Package: {APPNAME}\nMaintainer: {MAINTAINER}\nVersion: {VERSION}-{ctx.env.stamp}-{ctx.env.hash}\nArchitecture: {ARCH}\nDescription: {DESCRIPTION}" > '+ctx.path.abspath()+'/.control_info')
+    ctx.exec_command(
+        f'echo "dpkg -b ./out {APPNAME}_{VERSION}-{ctx.env.stamp}-{ctx.env.hash}_amd64.deb" > '+ctx.path.abspath()+'/package.sh')
+    ctx.exec_command(
+        f'echo "echo \"building package finished\"" >> '+ctx.path.abspath()+'/package.sh')
+    ctx.exec_command('chmod a+x '+ctx.path.abspath()+'/package.sh')
