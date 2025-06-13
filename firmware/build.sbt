@@ -8,6 +8,7 @@ val spinalLib = "com.github.spinalhdl" %% "spinalhdl-lib" % spinalVersion
 val spinalIdslPlugin = compilerPlugin(
   "com.github.spinalhdl" %% "spinalhdl-idsl-plugin" % spinalVersion
 )
+val spinalUtils = "io.github.xueweiwujxw" %% "spinalutils" % "0.1.4"
 val scoptlib = "com.github.scopt" %% "scopt" % "4.1.0"
 
 lazy val fpgaUpdaterLib = (project in file("."))
@@ -20,6 +21,7 @@ lazy val fpgaUpdaterLib = (project in file("."))
       spinalCore,
       spinalLib,
       spinalIdslPlugin,
+      spinalUtils,
       scoptlib
     )
   )
