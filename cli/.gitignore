@@ -1,0 +1,15 @@
+build/
+.vscode/*.json
+!.vscode/c_cpp_properties.json
+doc/
+.lock-waf*_build
+*.log
+/*.db
+
+/tmp
+
+/*.conf
+/out
+*.deb
+package.sh
+.control_info

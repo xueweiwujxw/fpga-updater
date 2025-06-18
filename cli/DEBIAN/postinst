@@ -1,0 +1,7 @@
+#!/bin/sh
+
+## permission
+chown root:root /usr/local/fpga-updater/bin/updater
+
+## link
+ln -sv /usr/local/fpga-updater/bin/updater /usr/bin/fpga-updater
